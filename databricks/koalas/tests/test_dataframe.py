@@ -69,22 +69,12 @@ class DataFrameTest(ReusedSQLTestCase, SQLTestUtils):
 
         self.assertEqual(ddf.a.notnull().alias("x").name, "x")
 
-    def test_repr(self):
-        # Make sure we only fetch max_display_count
-        self.assertEqual(koalas.range(1001).__repr__(),
-                         koalas.range(max_display_count).__repr__())
-
     def test_repr_cache_invalidation(self):
         # If there is any cache, inplace operations should invalidate it.
         df = koalas.range(10)
         df.__repr__()
         df['a'] = df['id']
         self.assertEqual(df.__repr__(), df.to_pandas().__repr__())
-
-    def test_repr_html(self):
-        # Make sure we only fetch max_display_count
-        self.assertEqual(koalas.range(1001)._repr_html_(),
-                         koalas.range(max_display_count)._repr_html_())
 
     def test_repr_html_cache_invalidation(self):
         # If there is any cache, inplace operations should invalidate it.
@@ -404,3 +394,81 @@ class DataFrameTest(ReusedSQLTestCase, SQLTestUtils):
         msg = "Values should be iterable, Series, DataFrame or dict."
         with self.assertRaisesRegex(TypeError, msg):
             kdf.isin(1)
+
+    def test_merge(self):
+        left_kdf = koalas.DataFrame({'A': [1, 2]})
+        right_kdf = koalas.DataFrame({'B': ['x', 'y']}, index=[1, 2])
+
+        # Assert only 'on' or 'left_index' and 'right_index' parameters are set
+        msg = "At least 'on' or 'left_index' and 'right_index' have to be set"
+        with self.assertRaises(ValueError, msg=msg):
+            left_kdf.merge(right_kdf)
+        msg = "Only 'on' or 'left_index' and 'right_index' can be set"
+        with self.assertRaises(ValueError, msg=msg):
+            left_kdf.merge(right_kdf, on='id', left_index=True)
+
+        # Assert a valid option for the 'how' parameter is used
+        msg = ("The 'how' parameter has to be amongst the following values: ['inner', 'left', " +
+               "'right', 'full', 'outer']")
+        with self.assertRaises(ValueError, msg=msg):
+            left_kdf.merge(right_kdf, how='foo', left_index=True, right_index=True)
+
+        # Assert inner join
+        res = left_kdf.merge(right_kdf, left_index=True, right_index=True)
+        self.assert_eq(res, pd.DataFrame({'A': [2], 'B': ['x']}))
+
+        # Assert inner join on non-default column
+        left_kdf_with_id = koalas.DataFrame({'A': [1, 2], 'id': [0, 1]})
+        right_kdf_with_id = koalas.DataFrame({'B': ['x', 'y'], 'id': [0, 1]}, index=[1, 2])
+        res = left_kdf_with_id.merge(right_kdf_with_id, on='id')
+        # Explicitly set columns to also assure their correct order with Python 3.5
+        self.assert_eq(res, pd.DataFrame({'A': [1, 2], 'id': [0, 1], 'B': ['x', 'y']},
+                                         columns=['A', 'id', 'B']))
+
+        # Assert left join
+        res = left_kdf.merge(right_kdf, left_index=True, right_index=True, how='left')
+        # FIXME Replace None with np.nan once #263 is solved
+        self.assert_eq(res, pd.DataFrame({'A': [1, 2], 'B': [None, 'x']}))
+
+        # Assert right join
+        res = left_kdf.merge(right_kdf, left_index=True, right_index=True, how='right')
+        self.assert_eq(res, pd.DataFrame({'A': [2, np.nan], 'B': ['x', 'y']}))
+
+        # Assert full outer join
+        res = left_kdf.merge(right_kdf, left_index=True, right_index=True, how='outer')
+        # FIXME Replace None with np.nan once #263 is solved
+        self.assert_eq(res, pd.DataFrame({'A': [1, 2, np.nan], 'B': [None, 'x', 'y']}))
+
+        # Assert full outer join also works with 'full' keyword
+        res = left_kdf.merge(right_kdf, left_index=True, right_index=True, how='full')
+        # FIXME Replace None with np.nan once #263 is solved
+        self.assert_eq(res, pd.DataFrame({'A': [1, 2, np.nan], 'B': [None, 'x', 'y']}))
+
+        # Assert suffixes create the expected column names
+        res = left_kdf.merge(koalas.DataFrame({'A': [3, 4]}), left_index=True, right_index=True,
+                             suffixes=('_left', '_right'))
+        self.assert_eq(res, pd.DataFrame({'A_left': [1, 2], 'A_right': [3, 4]}))
+
+    def test_clip(self):
+        pdf = pd.DataFrame({'A': [0, 2, 4]})
+        kdf = koalas.from_pandas(pdf)
+
+        # Assert list-like values are not accepted for 'lower' and 'upper'
+        msg = "List-like value are not supported for 'lower' and 'upper' at the moment"
+        with self.assertRaises(ValueError, msg=msg):
+            kdf.clip(lower=[1])
+        with self.assertRaises(ValueError, msg=msg):
+            kdf.clip(upper=[1])
+
+        # Assert no lower or upper
+        self.assert_eq(kdf.clip(), pdf.clip())
+        # Assert lower only
+        self.assert_eq(kdf.clip(1), pdf.clip(1))
+        # Assert upper only
+        self.assert_eq(kdf.clip(upper=3), pdf.clip(upper=3))
+        # Assert lower and upper
+        self.assert_eq(kdf.clip(1, 3), pdf.clip(1, 3))
+
+        # Assert behavior on string values
+        str_kdf = koalas.DataFrame({'A': ['a', 'b', 'c']})
+        self.assert_eq(str_kdf.clip(1, 3), str_kdf)

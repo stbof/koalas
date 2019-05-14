@@ -27,20 +27,26 @@ from pyspark.sql.types import ByteType, ShortType, IntegerType, LongType, FloatT
     DoubleType, BooleanType, TimestampType, DecimalType, StringType, DateType, StructType
 
 from databricks import koalas as ks  # For running doctests and reference resolution in PyCharm.
-from databricks.koalas.dask.compatibility import string_types
 from databricks.koalas.utils import default_session
 from databricks.koalas.frame import DataFrame, _reduce_spark_multi
-from databricks.koalas.typedef import Col, pandas_wrap
+from databricks.koalas.typedef import Col, pandas_wraps
 from databricks.koalas.series import Series
 
 
 def from_pandas(pdf):
-    """Create DataFrame from pandas DataFrame.
+    """Create a Koalas DataFrame from a pandas DataFrame.
 
-    This is similar to `DataFrame.createDataFrame()` with pandas DataFrame, but this also picks
-    the index in the given pandas DataFrame.
+    This is similar to Spark's `DataFrame.createDataFrame()` with pandas DataFrame,
+    but this also picks the index in the given pandas DataFrame.
 
-    :param pdf: :class:`pandas.DataFrame`
+    Parameters
+    ----------
+    pdf : pandas.DataFrame
+        pandas DataFrame to read.
+
+    Returns
+    -------
+    DataFrame
     """
     if isinstance(pdf, pd.Series):
         return Series(pdf)
@@ -58,6 +64,13 @@ def sql(query: str) -> DataFrame:
     ----------
     query : str
         the SQL query
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
     >>> ks.sql("select * from range(10) where id > 7")
        id
     0   8
@@ -92,7 +105,7 @@ def range(start: int,
 
     Returns
     -------
-    df : koalas.DataFrame
+    DataFrame
 
     Examples
     --------
@@ -124,30 +137,44 @@ def read_csv(path, header='infer', names=None, usecols=None,
              mangle_dupe_cols=True, parse_dates=False, comment=None):
     """Read CSV (comma-separated) file into DataFrame.
 
-    :param path: The path string storing the CSV file to be read.
-    :param header: Whether to to use as the column names, and the start of the data.
-                   Default behavior is to infer the column names: if no names are passed
-                   the behavior is identical to `header=0` and column names are inferred from
-                   the first line of the file, if column names are passed explicitly then
-                   the behavior is identical to `header=None`. Explicitly pass `header=0` to be
-                   able to replace existing names
-    :param names: List of column names to use. If file contains no header row, then you should
-                  explicitly pass `header=None`. Duplicates in this list will cause an error to be
-                  issued.
-    :param usecols: Return a subset of the columns. If list-like, all elements must either be
-                    positional (i.e. integer indices into the document columns) or strings that
-                    correspond to column names provided either by the user in names or inferred
-                    from the document header row(s).
-                    If callable, the callable function will be evaluated against the column names,
-                    returning names where the callable function evaluates to `True`.
-    :param mangle_dupe_cols: Duplicate columns will be specified as 'X0', 'X1', ... 'XN', rather
-                             than 'X' ... 'X'. Passing in False will cause data to be overwritten if
-                             there are duplicate names in the columns.
-                             Currently only `True` is allowed.
-    :param parse_dates: boolean or list of ints or names or list of lists or dict, default `False`.
-                        Currently only `False` is allowed.
-    :param comment: Indicates the line should not be parsed.
-    :return: :class:`DataFrame`
+    Parameters
+    ----------
+    path : str
+        The path string storing the CSV file to be read.
+    header : int, list of int, default ‘infer’
+        Whether to to use as the column names, and the start of the data.
+        Default behavior is to infer the column names: if no names are passed
+        the behavior is identical to `header=0` and column names are inferred from
+        the first line of the file, if column names are passed explicitly then
+        the behavior is identical to `header=None`. Explicitly pass `header=0` to be
+        able to replace existing names
+    names : array-like, optional
+        List of column names to use. If file contains no header row, then you should
+        explicitly pass `header=None`. Duplicates in this list will cause an error to be issued.
+    usecols : list-like or callable, optional
+        Return a subset of the columns. If list-like, all elements must either be
+        positional (i.e. integer indices into the document columns) or strings that
+        correspond to column names provided either by the user in names or inferred
+        from the document header row(s).
+        If callable, the callable function will be evaluated against the column names,
+        returning names where the callable function evaluates to `True`.
+    mangle_dupe_cols : bool, default True
+        Duplicate columns will be specified as 'X0', 'X1', ... 'XN', rather
+        than 'X' ... 'X'. Passing in False will cause data to be overwritten if
+        there are duplicate names in the columns.
+        Currently only `True` is allowed.
+    parse_dates : boolean or list of ints or names or list of lists or dict, default `False`.
+        Currently only `False` is allowed.
+    comment: str, optional
+        Indicates the line should not be parsed.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+    >>> ks.read_csv('data.csv')  # doctest: +SKIP
     """
     if mangle_dupe_cols is not True:
         raise ValueError("mangle_dupe_cols can only be `True`: %s" % mangle_dupe_cols)
@@ -169,7 +196,7 @@ def read_csv(path, header='infer', names=None, usecols=None,
             raise ValueError("Unknown header argument {}".format(header))
 
         if comment is not None:
-            if not isinstance(comment, string_types) or len(comment) != 1:
+            if not isinstance(comment, str) or len(comment) != 1:
                 raise ValueError("Only length-1 comment characters supported")
             reader.option("comment", comment)
 
@@ -195,7 +222,7 @@ def read_csv(path, header='infer', names=None, usecols=None,
                 cols = [field.name for i, field in enumerate(sdf.schema) if i in usecols]
                 missing = [col for col in usecols
                            if col >= len(sdf.schema) or sdf.schema[col].name not in cols]
-            elif all(isinstance(col, string_types) for col in usecols):
+            elif all(isinstance(col, str) for col in usecols):
                 cols = [field.name for field in sdf.schema if field.name in usecols]
                 missing = [col for col in usecols if col not in cols]
             else:
@@ -217,9 +244,20 @@ def read_csv(path, header='infer', names=None, usecols=None,
 def read_parquet(path, columns=None):
     """Load a parquet object from the file path, returning a DataFrame.
 
-    :param path: File path
-    :param columns: If not None, only these columns will be read from the file.
-    :return: :class:`DataFrame`
+    Parameters
+    ----------
+    path : string
+        File path
+    columns : list, default=None
+        If not None, only these columns will be read from the file.
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+    >>> ks.read_parquet('data.parquet', columns=['name', 'gender'])  # doctest: +SKIP
     """
     if columns is not None:
         columns = list(columns)
@@ -239,19 +277,19 @@ def read_parquet(path, columns=None):
 
 def to_datetime(arg, errors='raise', format=None, infer_datetime_format=False):
     if isinstance(arg, Series):
-        return Series(_to_datetime1(
-            arg._scol,
+        return _to_datetime1(
+            arg,
             errors=errors,
             format=format,
-            infer_datetime_format=infer_datetime_format), arg._kdf, arg._index_info)
+            infer_datetime_format=infer_datetime_format)
     if isinstance(arg, DataFrame):
-        return Series(_to_datetime2(
-            arg_year=arg['year']._scol,
-            arg_month=arg['month']._scol,
-            arg_day=arg['day']._scol,
+        return _to_datetime2(
+            arg_year=arg['year'],
+            arg_month=arg['month'],
+            arg_day=arg['day'],
             errors=errors,
             format=format,
-            infer_datetime_format=infer_datetime_format), arg, arg._metadata.index_info)
+            infer_datetime_format=infer_datetime_format)
     if isinstance(arg, dict):
         return _to_datetime2(
             arg_year=arg['year'],
@@ -315,7 +353,8 @@ def get_dummies(data, prefix=None, prefix_sep='_', dummy_na=False, columns=None,
     3  1  0  0
 
     >>> df = ks.DataFrame({'A': ['a', 'b', 'a'], 'B': ['b', 'a', 'c'],
-    ...                    'C': [1, 2, 3]})
+    ...                    'C': [1, 2, 3]},
+    ...                   columns=['A', 'B', 'C'])
 
     >>> ks.get_dummies(df, prefix=['col1', 'col2'])
        C  col1_a  col1_b  col2_a  col2_b  col2_c
@@ -348,7 +387,7 @@ def get_dummies(data, prefix=None, prefix_sep='_', dummy_na=False, columns=None,
     if sparse is not False:
         raise NotImplementedError("get_dummies currently does not support sparse")
 
-    if isinstance(columns, string_types):
+    if isinstance(columns, str):
         columns = [columns]
     if dtype is None:
         dtype = 'byte'
@@ -360,7 +399,7 @@ def get_dummies(data, prefix=None, prefix_sep='_', dummy_na=False, columns=None,
         kdf = data.to_dataframe()
         remaining_columns = []
     else:
-        if isinstance(prefix, string_types):
+        if isinstance(prefix, str):
             raise ValueError("get_dummies currently does not support prefix as string types")
         kdf = data.copy()
         if columns is None:
@@ -409,8 +448,8 @@ def get_dummies(data, prefix=None, prefix_sep='_', dummy_na=False, columns=None,
     return kdf[remaining_columns]
 
 
-# @pandas_wrap(return_col=np.datetime64)
-@pandas_wrap
+# @pandas_wraps(return_col=np.datetime64)
+@pandas_wraps
 def _to_datetime1(arg, errors, format, infer_datetime_format) -> Col[np.datetime64]:
     return pd.to_datetime(
         arg,
@@ -419,8 +458,8 @@ def _to_datetime1(arg, errors, format, infer_datetime_format) -> Col[np.datetime
         infer_datetime_format=infer_datetime_format)
 
 
-# @pandas_wrap(return_col=np.datetime64)
-@pandas_wrap
+# @pandas_wraps(return_col=np.datetime64)
+@pandas_wraps
 def _to_datetime2(arg_year, arg_month, arg_day,
                   errors, format, infer_datetime_format) -> Col[np.datetime64]:
     arg = dict(year=arg_year, month=arg_month, day=arg_day)
